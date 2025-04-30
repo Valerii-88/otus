@@ -1,0 +1,85 @@
+name: Release Alkaa
+on:
+  workflow_dispatch:
+    inputs:
+      tagname:
+        description: 'Version name'
+        required: true
+        default: 'v1.0.0'
+        type: string
+
+env:
+  ALKAA_KEY_ALIAS: ${{ secrets.ALKAA_KEY_ALIAS }}
+  ALKAA_KEY_PASSWORD: ${{ secrets.ALKAA_KEY_PASSWORD }}
+  ALKAA_KEY_STORE_PASSWORD: ${{ secrets.ALKAA_KEY_STORE_PASSWORD }}
+  ALKAA_STORE_PATH: ${{ vars.ALKAA_STORE_PATH }}
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'refs/tags/${{ github.event.inputs.tagname }}',
+              sha: context.sha
+            })
+
+  github-release:
+    name: "Release on GitHub"
+    runs-on: "ubuntu-latest"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'adopt'
+
+      - name: Build with Gradle
+        run: ./gradlew assemble
+
+      - name: GitHub Release
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "${{ github.event.inputs.tagname }}"
+          prerelease: false
+          files: |
+            ./app/build/outputs/apk/debug/*.apk
+            ./app/build/outputs/apk/release/*.apk
+
+  google-play-release:
+    name: "Release on Google Play"
+    runs-on: "ubuntu-latest"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'adopt'
+
+      - name: Build with Gradle
+        run: ./gradlew bundleRelease
+
+      - name: Google Play Release
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.SERVICE_ACCOUNT_JSON }}
+          packageName: com.escodro.alkaa
+          releaseFiles: ./app/build/outputs/bundle/release/*.aab
+          track: production
+          status: completed
+          whatsNewDirectory: ./assets/whatsnew
